@@ -622,15 +622,15 @@ bkcRun (const BKCArgs *args)
 {
   BKCPath path = { NULL, BK_FALSE, NULL, NULL, NULL, NULL };
   BKCExit result = bkcParsePath (args->query, &path);
+  if (result == BKC_EXIT_OK)
+    {
+      result = bkcCheck (args, &path);
+    }
+
   if (result != BKC_EXIT_OK)
     {
       bkcMemFree (path.buffer);
       return result;
-    }
-
-  if (result == BKC_EXIT_OK)
-    {
-      result = bkcCheck (args, &path);
     }
 
   BKIni *ini = bkInit (args->flags);
