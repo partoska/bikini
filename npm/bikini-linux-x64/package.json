@@ -1,0 +1,23 @@
+{
+  "name": "@partoska/bikini-linux-x64",
+  "version": "1.0.0",
+  "description": "Linux x64 native binary for @partoska/bikini.",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/partoska/bikini.git"
+  },
+  "license": "MIT"
+}

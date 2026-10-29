@@ -1,0 +1,5 @@
+interface:
+  display_name: "bikini"
+  short_description: "Query and edit INI configuration files from the shell with the bikini CLI"
+  icon_large: "./assets/logo.png"
+  default_prompt: "Use $bikini to construct the exact command or script for my INI configuration task."

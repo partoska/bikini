@@ -1,0 +1,16 @@
+<!--
+  Bikini - Small, minimal INI library and query tool.
+  Copyright (C) 2026 Fabrika Charvat s.r.o. All rights reserved.
+  Developed by Partoska Laboratory team, <https://lab.partoska.com>
+
+  MIT License, see LICENSE.txt.
+
+  Adds the bin directory of the MSI installation to the system PATH (the
+  NSIS installer asks instead); CM_CP_bin.bikini.exe is the component CPack
+  generates for bin/bikini.exe.
+-->
+<CPackWiXPatch>
+  <CPackWiXFragment Id="CM_CP_bin.bikini.exe">
+    <Environment Id="BikiniPath" Name="PATH" Value="[INSTALL_ROOT]bin" Action="set" Part="last" Permanent="no" System="yes"/>
+  </CPackWiXFragment>
+</CPackWiXPatch>

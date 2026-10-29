@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="142 122 740 740" width="1024" height="1024">
+<title>Bikini</title>
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#2A0E52"/>
+  <stop offset="0.5" stop-color="#B3277F"/>
+  <stop offset="0.85" stop-color="#FF6A4A"/>
+  <stop offset="1" stop-color="#FF9A4A"/>
+</linearGradient>
+<linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#FFE873"/>
+  <stop offset="1" stop-color="#FF6A3D"/>
+</linearGradient>
+<linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#3B1258"/>
+  <stop offset="1" stop-color="#1A0830"/>
+</linearGradient>
+<clipPath id="above"><rect x="0" y="0" width="1024" height="812"/></clipPath>
+<mask id="cut">
+<rect width="1024" height="1024" fill="#FFF"/>
+<rect x="0" y="562" width="1024" height="10" fill="#000"/>
+<rect x="0" y="602" width="1024" height="17" fill="#000"/>
+<rect x="0" y="649" width="1024" height="24" fill="#000"/>
+<rect x="0" y="703" width="1024" height="31" fill="#000"/>
+<rect x="0" y="764" width="1024" height="38" fill="#000"/>
+</mask>
+</defs>
+<circle cx="512" cy="520" r="350" fill="url(#sun)" mask="url(#cut)" clip-path="url(#above)"/>
+<g transform="translate(512 468) scale(0.9) translate(-512 -468)">
+<g transform="translate(12 14)" opacity="0.9">
+<g fill="#14061F" stroke="#14061F" stroke-width="26" stroke-linejoin="miter">
+<path transform="translate(300 281)" fill-rule="evenodd" d="M0,0 H55 A55,55 0 0 1 106.42,74.53 A55,55 0 0 1 77,176 H0 ZM44,44 H55 A11,11 0 0 1 55,66 H44 ZM44,110 H77 A11,11 0 0 1 77,132 H44 Z"/>
+<path transform="translate(446 281)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path transform="translate(592 281)" fill-rule="nonzero" d="M0,0 L44,0 L44,176 L0,176 ZM78.32,0 L132,0 L75.68,116.16 L22,116.16 ZM58.08,70.4 L111.76,70.4 L132,176 L78.32,176 Z"/>
+<path transform="translate(300 479)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path transform="translate(446 479)" fill-rule="nonzero" d="M0,0 L44,0 L44,176 L0,176 ZM88,0 L132,0 L132,176 L88,176 ZM0,0 L53.68,0 L132,176 L78.32,176 Z"/>
+<path transform="translate(592 479)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path d="M218,199 L368,199 L368,241 L260,241 L260,695 L368,695 L368,737 L218,737 Z"/>
+<path d="M656,199 L806,199 L806,737 L656,737 L656,695 L764,695 L764,241 L656,241 Z"/>
+</g>
+</g>
+<g fill="#14061F" stroke="#14061F" stroke-width="26" stroke-linejoin="miter">
+<path transform="translate(300 281)" fill-rule="evenodd" d="M0,0 H55 A55,55 0 0 1 106.42,74.53 A55,55 0 0 1 77,176 H0 ZM44,44 H55 A11,11 0 0 1 55,66 H44 ZM44,110 H77 A11,11 0 0 1 77,132 H44 Z"/>
+<path transform="translate(446 281)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path transform="translate(592 281)" fill-rule="nonzero" d="M0,0 L44,0 L44,176 L0,176 ZM78.32,0 L132,0 L75.68,116.16 L22,116.16 ZM58.08,70.4 L111.76,70.4 L132,176 L78.32,176 Z"/>
+<path transform="translate(300 479)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path transform="translate(446 479)" fill-rule="nonzero" d="M0,0 L44,0 L44,176 L0,176 ZM88,0 L132,0 L132,176 L88,176 ZM0,0 L53.68,0 L132,176 L78.32,176 Z"/>
+<path transform="translate(592 479)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path d="M218,199 L368,199 L368,241 L260,241 L260,695 L368,695 L368,737 L218,737 Z"/>
+<path d="M656,199 L806,199 L806,737 L656,737 L656,695 L764,695 L764,241 L656,241 Z"/>
+</g>
+<g fill="#FFFFFF">
+<path transform="translate(300 281)" fill-rule="evenodd" d="M0,0 H55 A55,55 0 0 1 106.42,74.53 A55,55 0 0 1 77,176 H0 ZM44,44 H55 A11,11 0 0 1 55,66 H44 ZM44,110 H77 A11,11 0 0 1 77,132 H44 Z"/>
+<path transform="translate(446 281)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path transform="translate(592 281)" fill-rule="nonzero" d="M0,0 L44,0 L44,176 L0,176 ZM78.32,0 L132,0 L75.68,116.16 L22,116.16 ZM58.08,70.4 L111.76,70.4 L132,176 L78.32,176 Z"/>
+<path transform="translate(300 479)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path transform="translate(446 479)" fill-rule="nonzero" d="M0,0 L44,0 L44,176 L0,176 ZM88,0 L132,0 L132,176 L88,176 ZM0,0 L53.68,0 L132,176 L78.32,176 Z"/>
+<path transform="translate(592 479)" fill-rule="nonzero" d="M0,0 L132,0 L132,44 L88,44 L88,132 L132,132 L132,176 L0,176 L0,132 L44,132 L44,44 L0,44 Z"/>
+<path d="M218,199 L368,199 L368,241 L260,241 L260,695 L368,695 L368,737 L218,737 Z"/>
+<path d="M656,199 L806,199 L806,737 L656,737 L656,695 L764,695 L764,241 L656,241 Z"/>
+</g>
+</g>
+</svg>

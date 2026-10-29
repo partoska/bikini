@@ -1,0 +1,11 @@
+Bikini (bikini)
+
+This package will place the bikini command-line tool into /usr/bin,
+and the libbikini library with its headers into /usr/lib and /usr/include.
+
+Bikini is a small, minimal INI library and query tool. The bikini
+command reads INI files and prints sections, keys and values, so that
+shell scripts and pipelines can read and edit configuration without sed
+or awk. The library, libbikini, reads and writes the same INI text from C.
+
+After installation, run "bikini -h" in a terminal to get started.

@@ -1,0 +1,23 @@
+# Build trees (CMake, make) and packages
+build/
+build-*/
+dist/
+_CPack_Packages/
+*.pkg
+*.deb
+*.rpm
+*.msi
+
+# npm distribution: binaries are staged by the release workflow
+node_modules/
+npm/*/bin/bikini
+npm/*/bin/bikini.exe
+*.tgz
+
+# Editors and tools
+.cache/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
