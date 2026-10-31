@@ -148,9 +148,9 @@ testCase (void)
   ini = parse (BK_FICASE, text, BK_OK);
   BK_ASSERT_STR_EQ (bkGet (ini, "bridge", "captain"), "Picard");
   BK_ASSERT_STR_EQ (bkGet (ini, "BRIDGE", "Captain"), "Picard");
-  BK_ASSERT_STR_EQ (bkSectionKey (bkSectionAt (ini, 0), 0), "CAPTAIN");
+  BK_ASSERT_STR_EQ (bkKeyAt (bkSectionAt (ini, 0), 0), "CAPTAIN");
   BK_ASSERT_EQ (bkSet (ini, "bridge", "captain", "Number One"), BK_OK);
-  BK_ASSERT_EQ (bkSectionSize (bkSectionFind (ini, "BRIDGE")), 1);
+  BK_ASSERT_EQ (bkKeyCount (bkSectionFind (ini, "BRIDGE")), 1);
   BK_ASSERT_STR_EQ (bkGet (ini, "Bridge", "CAPTAIN"), "Number One");
   bkDestroy (ini);
 }
@@ -248,8 +248,8 @@ testSections (void)
   BK_ASSERT_EQ (bkSet (ini, "starbug", "fuel", "low"), BK_OK);
   BK_ASSERT_EQ (bkSet (ini, "starbug", "pilot", "Lister"), BK_OK);
   BK_ASSERT_EQ (bkSet (ini, "starbug", "fuel", "empty"), BK_OK);
-  BK_ASSERT_EQ (bkSectionAdd (ini, "stasis"), BK_OK);
-  BK_ASSERT_EQ (bkSectionAdd (ini, "stasis"), BK_OK);
+  BK_ASSERT_EQ (bkSectionSet (ini, "stasis"), BK_OK);
+  BK_ASSERT_EQ (bkSectionSet (ini, "stasis"), BK_OK);
 
   BK_ASSERT_EQ (bkSectionCount (ini), 2);
   BK_ASSERT_STR_EQ (bkSectionName (bkSectionAt (ini, 0)), "starbug");
@@ -257,14 +257,14 @@ testSections (void)
   BK_ASSERT (bkSectionAt (ini, 2) == NULL);
 
   const BKSection *starbug = bkSectionFind (ini, "starbug");
-  BK_ASSERT_EQ (bkSectionSize (starbug), 2);
-  BK_ASSERT_STR_EQ (bkSectionKey (starbug, 0), "fuel");
-  BK_ASSERT_STR_EQ (bkSectionValue (starbug, 0), "empty");
-  BK_ASSERT_STR_EQ (bkSectionKey (starbug, 1), "pilot");
-  BK_ASSERT (bkSectionKey (starbug, 2) == NULL);
-  BK_ASSERT (bkSectionValue (starbug, 2) == NULL);
+  BK_ASSERT_EQ (bkKeyCount (starbug), 2);
+  BK_ASSERT_STR_EQ (bkKeyAt (starbug, 0), "fuel");
+  BK_ASSERT_STR_EQ (bkValueAt (starbug, 0), "empty");
+  BK_ASSERT_STR_EQ (bkKeyAt (starbug, 1), "pilot");
+  BK_ASSERT (bkKeyAt (starbug, 2) == NULL);
+  BK_ASSERT (bkValueAt (starbug, 2) == NULL);
   BK_ASSERT_STR_EQ (bkSectionGet (starbug, "pilot"), "Lister");
-  BK_ASSERT_EQ (bkSectionSize (bkSectionFind (ini, "stasis")), 0);
+  BK_ASSERT_EQ (bkKeyCount (bkSectionFind (ini, "stasis")), 0);
 
   bkDestroy (ini);
 }
@@ -283,7 +283,7 @@ testRemove (void)
   BK_ASSERT (!bkRemove (ini, "crew", "rimmer"));
   BK_ASSERT (!bkRemove (ini, "nowhere", "lister"));
   BK_ASSERT (bkRemove (ini, "crew", "cat"));
-  BK_ASSERT_EQ (bkSectionSize (bkSectionFind (ini, "crew")), 1);
+  BK_ASSERT_EQ (bkKeyCount (bkSectionFind (ini, "crew")), 1);
   BK_ASSERT_STR_EQ (bkGet (ini, "crew", "lister"), "slob");
 
   // An emptied section stays.
@@ -334,7 +334,7 @@ testSetRejects (void)
   BK_ASSERT_EQ (bkSet (ini, "", "order", "engage"), BK_EARG);
   BK_ASSERT_EQ (bkSet (ini, "ten]forward", "order", "tea"), BK_EARG);
   BK_ASSERT_STR_EQ (bkError (ini)->message, "invalid section name");
-  BK_ASSERT_EQ (bkSectionAdd (ini, "ten\nforward"), BK_EARG);
+  BK_ASSERT_EQ (bkSectionSet (ini, "ten\nforward"), BK_EARG);
   BK_ASSERT_EQ (bkSet (NULL, "bridge", "order", "engage"), BK_EARG);
   BK_ASSERT_EQ (bkSectionCount (ini), 0);
 
@@ -347,7 +347,7 @@ testWrite (void)
   BKIni *ini = bkInit (BK_FNONE);
   bkSet (ini, "kryten", "guilt", "");
   bkSet (ini, "kryten", "series", "4000");
-  bkSectionAdd (ini, "stasis");
+  bkSectionSet (ini, "stasis");
   bkSet (ini, "log", "entry", "stardate\n41153.7");
 
   BK_ASSERT_STR_EQ (serialize (ini), "[kryten]\n"
@@ -602,12 +602,187 @@ testNullSafety (void)
   BK_ASSERT (bkSectionFind (NULL, "a") == NULL);
   BK_ASSERT (bkSectionGet (NULL, "a") == NULL);
   BK_ASSERT (bkSectionName (NULL) == NULL);
-  BK_ASSERT_EQ (bkSectionSize (NULL), 0);
+  BK_ASSERT (bkGetNth (NULL, "a", 0, "b", 0) == NULL);
+  BK_ASSERT (bkSectionFindNth (NULL, "a", 0) == NULL);
+  BK_ASSERT (bkSectionGetNth (NULL, "a", 0) == NULL);
+  BK_ASSERT_EQ (bkSectionCountOf (NULL, "a"), 0);
+  BK_ASSERT_EQ (bkKeyCountOf (NULL, "a"), 0);
+  BK_ASSERT_EQ (bkAdd (NULL, "a", 0, "b", "c"), BK_EARG);
+  BK_ASSERT_EQ (bkSetNth (NULL, "a", 0, "b", 0, "c"), BK_EARG);
+  BK_ASSERT (!bkRemoveNth (NULL, "a", 0, "b", 0));
+  BK_ASSERT (!bkSectionRemoveNth (NULL, "a", 0));
+  BK_ASSERT_EQ (bkKeyCount (NULL), 0);
   BK_ASSERT_EQ (bkSectionCount (NULL), 0);
   BK_ASSERT_STR_EQ (bkStatusText (BK_OK), "Success");
   BK_ASSERT_STR_EQ (bkStatusText (BK_EDUPLICATE), "Duplicate section or key");
   // The answer, but not a status.
   BK_ASSERT_STR_EQ (bkStatusText ((BKStatus)42), "Unknown error");
+}
+
+static void
+testMulti (void)
+{
+  const BKChar *text = "[ship]\n"
+                       "crew = Lister\n"
+                       "crew = Rimmer\n"
+                       "name = Red Dwarf\n"
+                       "crew = Cat\n"
+                       "[shuttle]\n"
+                       "name = Starbug 1\n"
+                       "[SHIP]\n"
+                       "name = Blue Midget\n";
+
+  // Repeats are errors without the flag.
+  BKIni *ini = parse (BK_FNONE, text, BK_EDUPLICATE);
+  bkDestroy (ini);
+
+  ini = parse (BK_FMULTI | BK_FICASE, text, BK_OK);
+  BK_ASSERT_EQ (bkSectionCount (ini), 3);
+  BK_ASSERT_EQ (bkSectionCountOf (ini, "ship"), 2);
+  BK_ASSERT_EQ (bkSectionCountOf (ini, "nowhere"), 0);
+  const BKSection *ship = bkSectionFindNth (ini, "Ship", 0);
+  BK_ASSERT (ship == bkSectionFind (ini, "ship"));
+  BK_ASSERT_STR_EQ (bkSectionName (bkSectionFindNth (ini, "ship", 1)), "SHIP");
+  BK_ASSERT (bkSectionFindNth (ini, "ship", 2) == NULL);
+  BK_ASSERT_EQ (bkKeyCount (ship), 4);
+  BK_ASSERT_EQ (bkKeyCountOf (ship, "CREW"), 3);
+  BK_ASSERT_EQ (bkKeyCountOf (ship, "captain"), 0);
+  BK_ASSERT_STR_EQ (bkSectionGetNth (ship, "crew", 2), "Cat");
+  BK_ASSERT (bkSectionGetNth (ship, "crew", 3) == NULL);
+
+  // Functions without an index take the first.
+  BK_ASSERT_STR_EQ (bkGet (ini, "ship", "crew"), "Lister");
+  BK_ASSERT_STR_EQ (bkGetNth (ini, "ship", 0, "crew", 1), "Rimmer");
+  BK_ASSERT_STR_EQ (bkGetNth (ini, "ship", 1, "name", 0), "Blue Midget");
+  BK_ASSERT (bkGetNth (ini, "ship", 2, "name", 0) == NULL);
+  BK_ASSERT_EQ (bkSet (ini, "ship", "name", "Red Dwarf II"), BK_OK);
+  BK_ASSERT_STR_EQ (bkGetNth (ini, "ship", 1, "name", 0), "Blue Midget");
+
+  // Written in document order, repeats included.
+  BK_ASSERT_STR_EQ (serialize (ini), "[ship]\n"
+                                     "crew = Lister\n"
+                                     "crew = Rimmer\n"
+                                     "name = Red Dwarf II\n"
+                                     "crew = Cat\n"
+                                     "\n"
+                                     "[shuttle]\n"
+                                     "name = Starbug 1\n"
+                                     "\n"
+                                     "[SHIP]\n"
+                                     "name = Blue Midget\n");
+
+  // Setting by index only replaces.
+  BK_ASSERT_EQ (bkSetNth (ini, "ship", 0, "crew", 2, "Kryten"), BK_OK);
+  BK_ASSERT_STR_EQ (bkGetNth (ini, "ship", 0, "crew", 2), "Kryten");
+  BK_ASSERT_EQ (bkSetNth (ini, "ship", 0, "crew", 3, "Holly"), BK_EARG);
+  BK_ASSERT_STR_EQ (bkError (ini)->message,
+                    "no key 'crew' at index 3 in [ship]");
+  BK_ASSERT_EQ (bkSetNth (ini, "ship", 2, "crew", 0, "Holly"), BK_EARG);
+  BK_ASSERT_STR_EQ (bkError (ini)->message, "no section [ship] at index 2");
+  BK_ASSERT_EQ (bkSetNth (ini, "ship", 0, "crew", 0, "a\rb"), BK_EARG);
+
+  // Adding goes after the last value of the key, or at the end.
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 0, "crew", "Holly"), BK_OK);
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 1, "crew", "Skutter"), BK_OK);
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 2, "name", "White Giant"), BK_OK);
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 4, "name", "Nowhere"), BK_EARG);
+  BK_ASSERT_STR_EQ (bkError (ini)->message, "no section [ship] at index 4");
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 0, "[bad", "x"), BK_EARG);
+  BK_ASSERT_STR_EQ (serialize (ini), "[ship]\n"
+                                     "crew = Lister\n"
+                                     "crew = Rimmer\n"
+                                     "name = Red Dwarf II\n"
+                                     "crew = Kryten\n"
+                                     "crew = Holly\n"
+                                     "\n"
+                                     "[shuttle]\n"
+                                     "name = Starbug 1\n"
+                                     "\n"
+                                     "[SHIP]\n"
+                                     "name = Blue Midget\n"
+                                     "crew = Skutter\n"
+                                     "\n"
+                                     "[ship]\n"
+                                     "name = White Giant\n");
+
+  // Removing by index moves the later ones down.
+  BK_ASSERT (bkRemoveNth (ini, "ship", 0, "crew", 1));
+  BK_ASSERT_STR_EQ (bkGetNth (ini, "ship", 0, "crew", 1), "Kryten");
+  BK_ASSERT (!bkRemoveNth (ini, "ship", 0, "crew", 3));
+  BK_ASSERT (bkRemove (ini, "ship", "crew"));
+  BK_ASSERT_STR_EQ (bkGet (ini, "ship", "crew"), "Kryten");
+  BK_ASSERT (bkSectionRemoveNth (ini, "ship", 1));
+  BK_ASSERT_STR_EQ (bkGetNth (ini, "ship", 1, "name", 0), "White Giant");
+  BK_ASSERT (!bkSectionRemoveNth (ini, "ship", 2));
+  BK_ASSERT (bkSectionRemove (ini, "ship"));
+  BK_ASSERT_STR_EQ (bkGet (ini, "ship", "name"), "White Giant");
+  BK_ASSERT_EQ (bkSectionCountOf (ini, "ship"), 1);
+
+  // Setting a section keeps one, adding makes one more.
+  BK_ASSERT_EQ (bkSectionSet (ini, "ship"), BK_OK);
+  BK_ASSERT_EQ (bkSectionCountOf (ini, "ship"), 1);
+  BK_ASSERT_EQ (bkSectionAdd (ini, "ship"), BK_OK);
+  BK_ASSERT_EQ (bkSectionCountOf (ini, "ship"), 2);
+  BK_ASSERT_EQ (bkKeyCount (bkSectionFindNth (ini, "ship", 1)), 0);
+  BK_ASSERT_EQ (bkSectionAdd (ini, "ship]"), BK_EARG);
+  bkDestroy (ini);
+
+  // Without the flag, adding may not repeat.
+  ini = bkInit (BK_FNONE);
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 0, "crew", "Lister"), BK_OK);
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 0, "crew", "Rimmer"), BK_EARG);
+  BK_ASSERT_STR_EQ (bkError (ini)->message,
+                    "repeated key 'crew' in [ship] needs BK_FMULTI");
+  BK_ASSERT_EQ (bkAdd (ini, "ship", 1, "crew", "Rimmer"), BK_EARG);
+  BK_ASSERT_STR_EQ (bkError (ini)->message,
+                    "repeated section [ship] needs BK_FMULTI");
+  BK_ASSERT_EQ (bkSectionAdd (ini, "ship"), BK_EARG);
+  BK_ASSERT_EQ (bkSectionAdd (ini, "bay"), BK_OK);
+  BK_ASSERT_EQ (bkSectionCountOf (ini, "ship"), 1);
+  BK_ASSERT_EQ (bkKeyCountOf (bkSectionFind (ini, "ship"), "crew"), 1);
+  bkDestroy (ini);
+
+  // A later text adds repeats too.
+  ini = parse (BK_FMULTI, "[a]\nk = 1\n", BK_OK);
+  BK_ASSERT_EQ (bkParse (ini, "[a]\nk = 2\nk = 3\n"), BK_OK);
+  BK_ASSERT_EQ (bkSectionCountOf (ini, "a"), 2);
+  BK_ASSERT_STR_EQ (bkGetNth (ini, "a", 1, "k", 1), "3");
+  bkDestroy (ini);
+}
+
+static void
+testDelimiter (void)
+{
+  BKIni *ini
+      = parse (BK_FMULTI, "[ls]\nArg = -l\nArg = -a\nDir: /opt\n", BK_OK);
+
+  BK_ASSERT_EQ (bkSetDelimiter (ini, "="), BK_OK);
+  const BKChar *tight = "[ls]\nArg=-l\nArg=-a\nDir=/opt\n";
+  BK_ASSERT_STR_EQ (serialize (ini), tight);
+  BK_ASSERT_EQ (bkSetDelimiter (ini, "\t: "), BK_OK);
+  BK_ASSERT_STR_EQ (serialize (ini),
+                    "[ls]\nArg\t: -l\nArg\t: -a\nDir\t: /opt\n");
+
+  // Every accepted delimiter reads back.
+  BKIni *again = parse (BK_FMULTI, serialize (ini), BK_OK);
+  BK_ASSERT_STR_EQ (bkGetNth (again, "ls", 0, "Arg", 1), "-a");
+  BK_ASSERT_STR_EQ (bkGet (again, "ls", "Dir"), "/opt");
+  bkDestroy (again);
+
+  static const BKChar *const bad[]
+      = { "", " ", "==", "=:", "-", "= x", "\n=", "=\r", "\f=" };
+  for (BKSize i = 0; i < BK_COUNTOF (bad); ++i)
+    {
+      BK_ASSERT_EQ (bkSetDelimiter (ini, bad[i]), BK_EARG);
+    }
+  BK_ASSERT_STR_EQ (bkError (ini)->message, "invalid delimiter");
+  BK_ASSERT_EQ (bkSetDelimiter (ini, NULL), BK_EARG);
+  BK_ASSERT_EQ (bkSetDelimiter (NULL, "="), BK_EARG);
+  // A failed call keeps the delimiter.
+  BK_ASSERT_STR_EQ (serialize (ini),
+                    "[ls]\nArg\t: -l\nArg\t: -a\nDir\t: /opt\n");
+
+  bkDestroy (ini);
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -631,6 +806,8 @@ main (void)
   BK_RUN (testRead);
   BK_RUN (testReadErrors);
   BK_RUN (testFileErrors);
+  BK_RUN (testMulti);
+  BK_RUN (testDelimiter);
   BK_RUN (testNullSafety);
   BK_SUMMARY ();
 }

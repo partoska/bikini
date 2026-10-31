@@ -4,7 +4,7 @@
 
 # Bikini
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/partoska/bikini/releases/tag/v1.0.0)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/partoska/bikini/releases/tag/v2.0.0)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.txt)
 [![Build](https://github.com/partoska/bikini/actions/workflows/build.yml/badge.svg)](https://github.com/partoska/bikini/actions/workflows/build.yml)
 [![npm](https://img.shields.io/npm/v/@partoska/bikini.svg)](https://www.npmjs.com/package/@partoska/bikini)
@@ -14,8 +14,8 @@ Small, minimal INI library and query tool, in plain ISO C99.
 - **bikini** queries and edits INI files from the command line, so that shell
   scripts and pipelines can read configuration without `sed` or `awk`.
 - **libbikini** reads and writes the common INI dialect (without
-  interpolation), keeps sections and keys in file order and never prints
-  anything: errors live in the document.
+  interpolation), keeps sections and keys in file order and never prints to
+  stdout or stderr.
 
 ## Features
 
@@ -24,6 +24,9 @@ Small, minimal INI library and query tool, in plain ISO C99.
 - Lists of section or key names, one per line, for shell loops.
 - Several files merged in order, later values replacing earlier ones.
 - Setting and deleting keys and sections, printed or written back in place.
+- Repeated sections and keys on request, addressed by index, for lists such
+  as the arguments of a process.
+- A choice of delimiter between key and value in the output.
 - Exit codes for scripts: `0` found, `1` not found, `2` usage or input error.
 - Output of sections and documents is valid INI, ready for another `bikini`.
 - A dependency-free C library behind it, with stream callbacks for any source.
@@ -164,6 +167,59 @@ $ bikini -d -w client app.ini || echo "no [client]"
 
 The file is rewritten in place, so it keeps its permissions and links.
 
+Repeated sections and keys are errors unless `--multi` allows them. Then
+every name in a query carries its index among the repeats, counted from
+`0` in document order, or `[*]` for all of them; `SECTION[N].KEY[M]` and
+`SECTION[N]` replace `SECTION.KEY` and `SECTION`. A section name ends at
+its index, so dots in names need no quotes.
+
+```ini
+[process]
+name = ls
+arg = -l
+arg = -a
+
+[process]
+name = sleep
+arg = 30
+```
+
+```sh
+$ bikini --multi 'process[0].arg[1]' procs.ini
+-a
+$ bikini --multi 'process[0].arg[*]' procs.ini
+-l
+-a
+$ bikini --multi 'process[*].name[0]' procs.ini
+ls
+sleep
+$ bikini --multi -k 'process[0]' procs.ini
+name[0]
+arg[0]
+arg[1]
+```
+
+`-k` lists names with their indexes, ready for the next query. `-s`
+replaces an existing value only, and exits with `1` when there is none;
+`--add VALUE SECTION[N].KEY` adds a value after the last one of the key,
+or starts a new section when `N` is one past the last. `-d` deletes one
+section or value, or with `[*]` all of them. Several files are
+concatenated, as if they were one.
+
+```sh
+$ bikini --multi -w --add -h 'process[0].arg' procs.ini
+$ bikini --multi -w --add pwd 'process[2].name' procs.ini
+$ bikini --multi -d 'process[*].arg[*]' procs.ini
+```
+
+Output is normalized, keys and values separated by ` = `; `--delimiter
+TEXT` writes another delimiter made of `=` or `:` with optional blanks,
+such as `=` or `': '`, for programs that read their files back strictly.
+
+```sh
+$ bikini --multi --delimiter = -w --add -R 'process[0].arg' procs.ini
+```
+
 Other options: `-i` / `--ignore-case` matches sections and keys ASCII
 case-insensitively, `-h` / `--help`, `-V` / `--version`.
 
@@ -214,8 +270,33 @@ bkRead (ini, readStdin, NULL);
 ```
 
 `bkRemove` and `bkSectionRemove` delete a key or a whole section. Repeated
-sections and repeated keys within a section are errors. See
-`src/lib/inc/bikini.h` for the whole API.
+sections and repeated keys within a section are errors, unless the document
+is created with `BK_FMULTI`. Then each repeat is addressed by its index
+among those of the same name: `bkGetNth`, `bkSetNth` (replaces only),
+`bkAdd`, `bkRemoveNth`, `bkSectionFindNth`, `bkSectionRemoveNth`,
+`bkSectionCountOf`, `bkSectionGetNth` and `bkKeyCountOf`. Functions
+without an index work on the first, index `0`. `bkSectionSet` makes sure a
+section exists, `bkSectionAdd` adds another one.
+
+```c
+BKIni *ini = bkInit (BK_FMULTI);
+bkLoad (ini, "procs.ini");
+const BKSection *process = bkSectionFindNth (ini, "process", 0);
+for (BKSize i = 0; i < bkKeyCountOf (process, "arg"); ++i)
+  {
+    puts (bkSectionGetNth (process, "arg", i));
+  }
+
+bkAdd (ini, "process", 0, "arg", "-h");
+bkSetNth (ini, "process", 1, "arg", 0, "60");
+```
+
+`bkSetDelimiter` chooses what `bkWrite` and `bkSave` put between key and
+value (` = ` by default), e.g. `"="`.
+
+Functions ending in `At` take a position in document order, those ending
+in `Nth` an index among the repeats of a name. See `src/lib/inc/bikini.h`
+for the whole API.
 
 Link with `pkg-config --cflags --libs bikini`, or in CMake add this
 repository with `add_subdirectory` and link the `bikini` target.

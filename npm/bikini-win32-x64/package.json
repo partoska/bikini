@@ -1,6 +1,6 @@
 {
   "name": "@partoska/bikini-win32-x64",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Windows x64 native binary for @partoska/bikini.",
   "os": [
     "win32"

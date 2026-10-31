@@ -1,6 +1,6 @@
 {
   "name": "@partoska/bikini-win32-arm64",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Windows arm64 native binary for @partoska/bikini.",
   "os": [
     "win32"

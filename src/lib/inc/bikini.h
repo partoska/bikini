@@ -39,7 +39,7 @@
  * Macros
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define BK_VERSION "1.0.0"
+#define BK_VERSION "2.0.0"
 #define BK_ERROR_MAX (256)
 #define BK_READ_ERROR (~(BKSize)0)
 
@@ -71,7 +71,14 @@ extern "C"
 
     /** Match section names and keys case-insensitively (ASCII), in lookups
      * and duplicate checks alike. Names are kept as written. */
-    BK_FICASE = 1 << 0
+    BK_FICASE = 1 << 0,
+
+    /** Allow sections repeated within a text and keys repeated within a
+     * section, instead of BK_EDUPLICATE. Each repeat of a section stays a
+     * section of its own; repeats are told apart by their index among
+     * those of the same name, in document order. Functions without an
+     * index address the first, index 0. */
+    BK_FMULTI = 1 << 1
   } BKFlag;
 
   /** Details of the most recent operation on a document; see bkError(). */
@@ -154,7 +161,8 @@ extern "C"
 
   /**
    * Parses INI text into a document. Sections and keys are added to those
-   * already present; a repeat is BK_EDUPLICATE. On failure the document
+   * already present; a repeat is BK_EDUPLICATE, unless BK_FMULTI makes it
+   * one more section or value. On failure the document
    * holds whatever was parsed before the offending line.
    *
    * @param ini  Document to populate.
@@ -189,7 +197,8 @@ extern "C"
 
   /**
    * Serializes a document as INI text, section by section in document
-   * order. Multi-line values become tab-indented continuation lines.
+   * order, keys and values separated as bkSetDelimiter() chose. Multi-line
+   * values become tab-indented continuation lines.
    *
    * @param ini   Document to serialize.
    * @param write Receives the text, in pieces.
@@ -197,6 +206,17 @@ extern "C"
    * @return BK_OK on success, or BK_EIO when write fails.
    */
   BKStatus bkWrite (BKIni *ini, BKWriteFn write, BKVoid *user);
+
+  /**
+   * Chooses what bkWrite() and bkSave() put between key and value.
+   *
+   * @param ini       Document to modify.
+   * @param delimiter Optional blanks, = or :, and optional blanks, so that
+   *                  the text reads back: e.g. "=", ": " or " = ", the
+   *                  default.
+   * @return BK_OK on success, or a BK_E* error code.
+   */
+  BKStatus bkSetDelimiter (BKIni *ini, const BKChar *delimiter);
 
   /**
    * Writes a document to a file, replacing its contents. Callers that need
@@ -214,7 +234,8 @@ extern "C"
    * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
   /**
-   * Looks up a value.
+   * Looks up a value; with repeats, the first value of the first section of
+   * that name.
    *
    * @param ini     Document to search.
    * @param section Section name.
@@ -225,7 +246,21 @@ extern "C"
                        const BKChar *key);
 
   /**
-   * Sets a value, adding the section and key when missing. Keys must be
+   * Looks up a value by position among repeats.
+   *
+   * @param ini     Document to search.
+   * @param section Section name.
+   * @param sindex  Index among the sections of that name.
+   * @param key     Key name.
+   * @param kindex  Index among the values of that key in the section.
+   * @return The value, or NULL when the section or key is missing.
+   */
+  const BKChar *bkGetNth (const BKIni *ini, const BKChar *section,
+                          BKSize sindex, const BKChar *key, BKSize kindex);
+
+  /**
+   * Sets a value, adding the section and key when missing; with repeats,
+   * the first value of the first section of that name. Keys must be
    * non-empty, without surrounding blanks, line breaks, = or :, and must not
    * start with [, ; or #. Values must not contain carriage returns.
    *
@@ -239,7 +274,41 @@ extern "C"
                   const BKChar *value);
 
   /**
-   * Removes a key and its value; the section stays, even when empty.
+   * Replaces an existing value, addressed by position among repeats; names
+   * and values as for bkSet().
+   *
+   * @param ini     Document to modify.
+   * @param section Section name.
+   * @param sindex  Index among the sections of that name.
+   * @param key     Key name.
+   * @param kindex  Index among the values of that key in the section.
+   * @param value   Value to store; the document keeps a copy.
+   * @return BK_OK on success, or a BK_E* error code; BK_EARG when the
+   *         section or value is missing.
+   */
+  BKStatus bkSetNth (BKIni *ini, const BKChar *section, BKSize sindex,
+                     const BKChar *key, BKSize kindex, const BKChar *value);
+
+  /**
+   * Adds a value after the last value of the key in a section, or at the
+   * end of the section for a new key; names and values as for bkSet(). An
+   * index one past the last section of that name adds a section. Repeats
+   * need BK_FMULTI.
+   *
+   * @param ini     Document to modify.
+   * @param section Section name.
+   * @param sindex  Index among the sections of that name.
+   * @param key     Key name.
+   * @param value   Value to store; the document keeps a copy.
+   * @return BK_OK on success, or a BK_E* error code; BK_EARG for a missing
+   *         section or a repeat without BK_FMULTI.
+   */
+  BKStatus bkAdd (BKIni *ini, const BKChar *section, BKSize sindex,
+                  const BKChar *key, const BKChar *value);
+
+  /**
+   * Removes a key and its value, the first one with repeats; the section
+   * stays, even when empty.
    *
    * @param ini     Document to modify.
    * @param section Section name.
@@ -248,28 +317,64 @@ extern "C"
    */
   BKBool bkRemove (BKIni *ini, const BKChar *section, const BKChar *key);
 
+  /**
+   * Removes a value, addressed by position among repeats; later values of
+   * the key move down one index.
+   *
+   * @param ini     Document to modify.
+   * @param section Section name.
+   * @param sindex  Index among the sections of that name.
+   * @param key     Key name.
+   * @param kindex  Index among the values of that key in the section.
+   * @return BK_TRUE when the value was removed, BK_FALSE when missing.
+   */
+  BKBool bkRemoveNth (BKIni *ini, const BKChar *section, BKSize sindex,
+                      const BKChar *key, BKSize kindex);
+
   /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
    * Declarations - Sections
    * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
   /**
-   * Adds an empty section unless it already exists.
+   * Adds an empty section unless one of that name already exists.
    *
    * @param ini  Document to modify.
    * @param name Section name; non-empty, without line breaks or ].
    * @return BK_OK on success, or a BK_E* error code.
    */
+  BKStatus bkSectionSet (BKIni *ini, const BKChar *name);
+
+  /**
+   * Adds an empty section at the end of the document, as one more repeat
+   * when one of that name exists, which needs BK_FMULTI.
+   *
+   * @param ini  Document to modify.
+   * @param name Section name; non-empty, without line breaks or ].
+   * @return BK_OK on success, or a BK_E* error code; BK_EARG for a repeat
+   *         without BK_FMULTI.
+   */
   BKStatus bkSectionAdd (BKIni *ini, const BKChar *name);
 
   /**
-   * Removes a section with all its keys. Later sections move up one
-   * position.
+   * Removes a section with all its keys, the first one with repeats. Later
+   * sections move up one position.
    *
    * @param ini  Document to modify.
    * @param name Section name.
    * @return BK_TRUE when the section was removed, BK_FALSE when missing.
    */
   BKBool bkSectionRemove (BKIni *ini, const BKChar *name);
+
+  /**
+   * Removes a section, addressed by position among repeats; later repeats
+   * move down one index.
+   *
+   * @param ini   Document to modify.
+   * @param name  Section name.
+   * @param index Index among the sections of that name.
+   * @return BK_TRUE when the section was removed, BK_FALSE when missing.
+   */
+  BKBool bkSectionRemoveNth (BKIni *ini, const BKChar *name, BKSize index);
 
   /**
    * Gets the number of sections.
@@ -280,7 +385,7 @@ extern "C"
   BKSize bkSectionCount (const BKIni *ini);
 
   /**
-   * Gets a section by position, in document order.
+   * Gets a section by position, in document order, repeats included.
    *
    * @param ini   Document to inspect.
    * @param index Position below bkSectionCount().
@@ -289,14 +394,36 @@ extern "C"
   const BKSection *bkSectionAt (const BKIni *ini, BKSize index);
 
   /**
-   * Finds a section by name.
+   * Finds a section by name, the first one with repeats.
    *
    * @param ini  Document to search.
    * @param name Section name.
    * @return The section, or NULL when missing. Valid until the section is
-   *         removed or the document destroyed.
+   *         removed or the document destroyed; removing a repeat makes the
+   *         next one the first.
    */
   const BKSection *bkSectionFind (const BKIni *ini, const BKChar *name);
+
+  /**
+   * Finds a section by name and position among repeats.
+   *
+   * @param ini   Document to search.
+   * @param name  Section name.
+   * @param index Index among the sections of that name.
+   * @return The section, or NULL when missing; valid as for
+   *         bkSectionFind().
+   */
+  const BKSection *bkSectionFindNth (const BKIni *ini, const BKChar *name,
+                                     BKSize index);
+
+  /**
+   * Counts the sections of a name.
+   *
+   * @param ini  Document to inspect.
+   * @param name Section name.
+   * @return Number of sections of that name: 0 or 1 without BK_FMULTI.
+   */
+  BKSize bkSectionCountOf (const BKIni *ini, const BKChar *name);
 
   /**
    * Gets the name of a section.
@@ -307,39 +434,59 @@ extern "C"
   const BKChar *bkSectionName (const BKSection *section);
 
   /**
-   * Gets the number of keys in a section.
+   * Gets the number of keys in a section, repeats included.
    *
    * @param section Section to inspect.
    * @return Key count, 0 for NULL.
    */
-  BKSize bkSectionSize (const BKSection *section);
+  BKSize bkKeyCount (const BKSection *section);
 
   /**
-   * Gets a key by position, in document order.
+   * Gets a key by position, in document order, repeats included.
    *
    * @param section Section to inspect.
-   * @param index   Position below bkSectionSize().
+   * @param index   Position below bkKeyCount().
    * @return The key, or NULL when out of range.
    */
-  const BKChar *bkSectionKey (const BKSection *section, BKSize index);
+  const BKChar *bkKeyAt (const BKSection *section, BKSize index);
 
   /**
    * Gets a value by position, in document order.
    *
    * @param section Section to inspect.
-   * @param index   Position below bkSectionSize().
+   * @param index   Position below bkKeyCount().
    * @return The value, or NULL when out of range.
    */
-  const BKChar *bkSectionValue (const BKSection *section, BKSize index);
+  const BKChar *bkValueAt (const BKSection *section, BKSize index);
 
   /**
-   * Looks up a value within a section.
+   * Looks up a value within a section, the first one with repeats.
    *
    * @param section Section to search; may be NULL.
    * @param key     Key name.
    * @return The value, or NULL when missing.
    */
   const BKChar *bkSectionGet (const BKSection *section, const BKChar *key);
+
+  /**
+   * Looks up a value within a section by position among repeats.
+   *
+   * @param section Section to search; may be NULL.
+   * @param key     Key name.
+   * @param index   Index among the values of that key.
+   * @return The value, or NULL when missing.
+   */
+  const BKChar *bkSectionGetNth (const BKSection *section, const BKChar *key,
+                                 BKSize index);
+
+  /**
+   * Counts the values of a key within a section.
+   *
+   * @param section Section to inspect; may be NULL.
+   * @param key     Key name.
+   * @return Number of values: 0 or 1 without BK_FMULTI.
+   */
+  BKSize bkKeyCountOf (const BKSection *section, const BKChar *key);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
 {
   "name": "@partoska/bikini",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Query and edit INI files from the command line.",
   "bin": {
     "bikini": "bin/bikini.js"
@@ -10,11 +10,11 @@
     "README.md"
   ],
   "optionalDependencies": {
-    "@partoska/bikini-darwin": "1.0.0",
-    "@partoska/bikini-linux-x64": "1.0.0",
-    "@partoska/bikini-linux-arm64": "1.0.0",
-    "@partoska/bikini-win32-x64": "1.0.0",
-    "@partoska/bikini-win32-arm64": "1.0.0"
+    "@partoska/bikini-darwin": "2.0.0",
+    "@partoska/bikini-linux-x64": "2.0.0",
+    "@partoska/bikini-linux-arm64": "2.0.0",
+    "@partoska/bikini-win32-x64": "2.0.0",
+    "@partoska/bikini-win32-arm64": "2.0.0"
   },
   "engines": {
     "node": ">=18"

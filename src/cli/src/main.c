@@ -49,6 +49,7 @@ typedef enum BKCMode
   BKC_MODE_QUERY,
   BKC_MODE_KEYS,
   BKC_MODE_SET,
+  BKC_MODE_ADD,
   BKC_MODE_DELETE
 } BKCMode;
 
@@ -57,6 +58,7 @@ typedef struct BKCArgs
   BKDword flags;
   BKCMode mode;
   BKBool write;
+  const BKChar *delimiter;
   const BKChar *value;
   const BKChar *query;
   const BKChar **paths;
@@ -70,6 +72,11 @@ typedef struct BKCPath
   const BKChar *whole;
   const BKChar *section;
   const BKChar *key;
+  BKSize sindex;  /* With --multi: index of the section, */
+  BKSize kindex;  /* and of the key. */
+  BKBool sall;    /* With --multi: [*] in place of an index, */
+  BKBool kall;    /* for the section and the key. */
+  BKBool indexed; /* With --multi: the key has an index. */
   BKChar *buffer;
 } BKCPath;
 
@@ -108,16 +115,26 @@ bkcUsage (void)
             "  SECTION.KEY        The raw value of a key\n"
             "  \"NAME\"             A quoted section or key name, which may\n"
             "                     contain dots; \\\" and \\\\ escape\n"
+            "  NAME[N], NAME[*]   With --multi, every name needs an index\n"
+            "                     among its repeats, or * for all of them\n"
             "\n"
             "Options:\n"
             "  -k, --keys         List the sections of the document, or the\n"
             "                     keys of SECTION\n"
             "  -s, --set VALUE    Set SECTION.KEY to VALUE and print the\n"
             "                     document\n"
+            "  --add VALUE        With --multi, add VALUE to SECTION[N].KEY\n"
+            "                     after its last value, or as a new section\n"
+            "                     one past the last one, and print the\n"
+            "                     document\n"
             "  -d, --delete       Delete SECTION or SECTION.KEY and print\n"
             "                     the document\n"
             "  -w, --write        Save the edit back to FILE instead\n"
             "  -i, --ignore-case  Match sections and keys case-insensitively\n"
+            "  --multi            Allow repeated sections and keys, and\n"
+            "                     concatenate several files\n"
+            "  --delimiter TEXT   Write TEXT between key and value, such as\n"
+            "                     =, : or ' = ' (default)\n"
             "  -h, --help         Show this help\n"
             "  -V, --version      Show the version\n"
             "\n"
@@ -143,7 +160,7 @@ bkcSetMode (BKCArgs *args, BKCMode mode)
 {
   if (args->mode != BKC_MODE_QUERY && args->mode != mode)
     {
-      bkcError ("bikini: options -k, -s and -d exclude each other\n");
+      bkcError ("bikini: options -k, -s, --add and -d exclude each other\n");
       return BKC_EXIT_ERROR;
     }
   args->mode = mode;
@@ -170,11 +187,25 @@ bkcParseArgs (BKInt argc, BKChar *argv[], BKCArgs *args, BKBool *done)
             {
               args->flags |= BK_FICASE;
             }
+          else if (bkcStrEq (arg, "--multi"))
+            {
+              args->flags |= BK_FMULTI;
+            }
+          else if (bkcStrEq (arg, "--delimiter"))
+            {
+              if (++i == argc)
+                {
+                  bkcError ("bikini: option '%s' needs a value\n", arg);
+                  return BKC_EXIT_ERROR;
+                }
+              args->delimiter = argv[i];
+            }
           else if (bkcStrEq (arg, "-k") || bkcStrEq (arg, "--keys"))
             {
               result = bkcSetMode (args, BKC_MODE_KEYS);
             }
-          else if (bkcStrEq (arg, "-s") || bkcStrEq (arg, "--set"))
+          else if (bkcStrEq (arg, "-s") || bkcStrEq (arg, "--set")
+                   || bkcStrEq (arg, "--add"))
             {
               if (++i == argc)
                 {
@@ -182,7 +213,8 @@ bkcParseArgs (BKInt argc, BKChar *argv[], BKCArgs *args, BKBool *done)
                   return BKC_EXIT_ERROR;
                 }
               args->value = argv[i];
-              result = bkcSetMode (args, BKC_MODE_SET);
+              result = bkcSetMode (
+                  args, bkcStrEq (arg, "--add") ? BKC_MODE_ADD : BKC_MODE_SET);
             }
           else if (bkcStrEq (arg, "-d") || bkcStrEq (arg, "--delete"))
             {
@@ -318,14 +350,179 @@ bkcParseQuoted (const BKChar *query, BKCPath *path)
   return BKC_EXIT_OK;
 }
 
+/* Reads an index between brackets, a number or *, and moves past it. */
+static BKBool
+bkcParseIndex (const BKChar **in, BKSize *index, BKBool *all)
+{
+  const BKChar *at = *in;
+  if (*at++ != '[')
+    {
+      return BK_FALSE;
+    }
+
+  *index = 0;
+  *all = *at == '*';
+  if (*all)
+    {
+      ++at;
+    }
+  else if (*at < '0' || *at > '9')
+    {
+      return BK_FALSE;
+    }
+  for (; *at >= '0' && *at <= '9'; ++at)
+    {
+      BKSize digit = (BKSize)(*at - '0');
+      if (*index > ((BKSize)-1 - digit) / 10)
+        {
+          return BK_FALSE;
+        }
+      *index = *index * 10 + digit;
+    }
+  if (*at++ != ']')
+    {
+      return BK_FALSE;
+    }
+
+  *in = at;
+
+  return BK_TRUE;
+}
+
+/* Copies a quoted name, unescaping \" and \\, and moves past it. */
+static BKBool
+bkcParseQuote (const BKChar **in, BKChar **out)
+{
+  const BKChar *at = *in + 1;
+  for (; *at != '"'; ++at)
+    {
+      if (*at == '\0')
+        {
+          return BK_FALSE;
+        }
+      if (*at == '\\' && (at[1] == '"' || at[1] == '\\'))
+        {
+          ++at;
+        }
+      *(*out)++ = *at;
+    }
+  *in = at + 1;
+
+  return BK_TRUE;
+}
+
+/* Splits a query of --multi, where every name carries an index: a section
+ * name ends at the first ], so its dots need no quotes; the key is the rest,
+ * with its index at the end. */
 static BKCExit
-bkcParsePath (const BKChar *query, BKCPath *path)
+bkcParseIndexed (const BKChar *query, BKCPath *path)
+{
+  path->buffer = bkcStrDup (query, bkcStrLen (query));
+  if (!path->buffer)
+    {
+      return bkcFailMem ();
+    }
+
+  // Names never grow when copied, and each ends where its index starts.
+  const BKChar *in = query;
+  BKChar *out = path->buffer;
+  const BKChar *name = out;
+  if (*in == '"')
+    {
+      if (!bkcParseQuote (&in, &out))
+        {
+          return bkcQueryErr (query, "unterminated quote");
+        }
+    }
+  else
+    {
+      const BKChar *close = bkcStrFind (in, ']');
+      const BKChar *open = close ? in : NULL;
+      for (const BKChar *at = in; close && at < close; ++at)
+        {
+          open = *at == '[' ? at : open;
+        }
+      if (!close || *open != '[')
+        {
+          return bkcQueryErr (query, "missing index of the section");
+        }
+      for (; in < open; ++in)
+        {
+          *out++ = *in;
+        }
+    }
+  if (out == name)
+    {
+      return bkcQueryErr (query, "empty name");
+    }
+  *out++ = '\0';
+  if (!bkcParseIndex (&in, &path->sindex, &path->sall))
+    {
+      return bkcQueryErr (query, "invalid index of the section");
+    }
+
+  if (*in == '\0')
+    {
+      path->whole = name;
+      return BKC_EXIT_OK;
+    }
+  if (*in++ != '.')
+    {
+      return bkcQueryErr (query, "expected . after an index");
+    }
+
+  path->section = name;
+  path->key = out;
+  if (*in == '"')
+    {
+      if (!bkcParseQuote (&in, &out))
+        {
+          return bkcQueryErr (query, "unterminated quote");
+        }
+    }
+  else
+    {
+      // The index of the key follows its last [, if it is at the end.
+      const BKChar *end = in + bkcStrLen (in);
+      const BKChar *open = bkcStrFindLast (in, '[');
+      if (end > in && end[-1] == ']' && open)
+        {
+          end = open;
+        }
+      for (; in < end; ++in)
+        {
+          *out++ = *in;
+        }
+    }
+  if (out == path->key)
+    {
+      return bkcQueryErr (query, "empty name");
+    }
+  *out = '\0';
+
+  path->indexed = *in != '\0';
+  if (path->indexed
+      && (!bkcParseIndex (&in, &path->kindex, &path->kall) || *in != '\0'))
+    {
+      return bkcQueryErr (query, "invalid index of the key");
+    }
+
+  return BKC_EXIT_OK;
+}
+
+static BKCExit
+bkcParsePath (const BKChar *query, BKCPath *path, BKBool multi)
 {
   path->query = query;
   if (bkcStrEq (query, "."))
     {
       path->root = BK_TRUE;
       return BKC_EXIT_OK;
+    }
+
+  if (multi)
+    {
+      return bkcParseIndexed (query, path);
     }
 
   if (bkcStrFind (query, '"'))
@@ -364,6 +561,34 @@ bkcCheck (const BKCArgs *args, const BKCPath *path)
       return BKC_EXIT_ERROR;
     }
 
+  if (args->mode == BKC_MODE_ADD && !(args->flags & BK_FMULTI))
+    {
+      bkcError ("bikini: --add needs --multi\n");
+      return BKC_EXIT_ERROR;
+    }
+
+  if (args->mode == BKC_MODE_ADD && (!path->key || path->indexed))
+    {
+      bkcError ("bikini: --add needs SECTION[N].KEY, the key without index\n");
+      return BKC_EXIT_ERROR;
+    }
+
+  if (args->mode != BKC_MODE_ADD && path->key && (args->flags & BK_FMULTI)
+      && !path->indexed)
+    {
+      bkcError ("bikini: invalid query '%s': missing index of the key\n",
+                path->query);
+      return BKC_EXIT_ERROR;
+    }
+
+  if ((args->mode == BKC_MODE_SET || args->mode == BKC_MODE_ADD
+       || args->mode == BKC_MODE_KEYS)
+      && (path->sall || path->kall))
+    {
+      bkcError ("bikini: [*] only selects in queries and --delete\n");
+      return BKC_EXIT_ERROR;
+    }
+
   if (args->mode == BKC_MODE_DELETE && path->root)
     {
       bkcError ("bikini: --delete needs SECTION or SECTION.KEY\n");
@@ -375,9 +600,10 @@ bkcCheck (const BKCArgs *args, const BKCPath *path)
       return BKC_EXIT_OK;
     }
 
-  if (args->mode != BKC_MODE_SET && args->mode != BKC_MODE_DELETE)
+  if (args->mode != BKC_MODE_SET && args->mode != BKC_MODE_ADD
+      && args->mode != BKC_MODE_DELETE)
     {
-      bkcError ("bikini: --write needs --set or --delete\n");
+      bkcError ("bikini: --write needs --set, --add or --delete\n");
       return BKC_EXIT_ERROR;
     }
 
@@ -428,24 +654,30 @@ static BKStatus
 bkcSectionCopy (BKIni *ini, const BKSection *section)
 {
   const BKChar *name = bkSectionName (section);
-  BKStatus status = bkSectionAdd (ini, name);
-  for (BKSize i = 0; status == BK_OK && i < bkSectionSize (section); ++i)
+  BKStatus status = bkSectionSet (ini, name);
+  for (BKSize i = 0; status == BK_OK && i < bkKeyCount (section); ++i)
     {
-      status = bkSet (ini, name, bkSectionKey (section, i),
-                      bkSectionValue (section, i));
+      status = bkSet (ini, name, bkKeyAt (section, i), bkValueAt (section, i));
     }
 
   return status;
 }
 
 /* Loads the inputs in order; a section repeated in a later input adds its
- * keys to the earlier one, replacing the values of keys both have. */
+ * keys to the earlier one, replacing the values of keys both have. With
+ * --multi the inputs are concatenated instead, as if they were one. */
 static BKCExit
 bkcLoadAll (BKIni *ini, const BKCArgs *args)
 {
   BKCExit result = bkcLoad (ini, args->paths[0]);
   for (BKSize i = 1; result == BKC_EXIT_OK && i < args->count; ++i)
     {
+      if (args->flags & BK_FMULTI)
+        {
+          result = bkcLoad (ini, args->paths[i]);
+          continue;
+        }
+
       BKIni *more = bkInit (args->flags);
       if (!more)
         {
@@ -487,30 +719,110 @@ bkcDocPrint (BKIni *ini)
   return BKC_EXIT_OK;
 }
 
-/* Writes one section as INI text, through a document of its own. */
+/* Prints a name with its index among repeats, as --multi queries take it. */
 static BKCExit
-bkcSectionPrint (const BKSection *section, BKDword flags)
+bkcPrintIndexed (const BKChar *name, BKSize index)
 {
-  BKIni *out = bkInit (flags);
-  if (!out)
+  BKChar digits[32];
+  BKChar *at = digits + sizeof (digits);
+  *--at = '\0';
+  do
+    {
+      *--at = (BKChar)('0' + index % 10);
+      index /= 10;
+    }
+  while (index > 0);
+
+  return bkcPrint (name) && bkcPrint ("[") && bkcPrint (at) && bkcPrint ("]\n")
+             ? BKC_EXIT_OK
+             : BKC_EXIT_ERROR;
+}
+
+/* Gets the index of a section among the sections of its name. */
+static BKSize
+bkcSectionIndex (const BKIni *ini, const BKSection *section)
+{
+  BKSize index = 0;
+  while (bkSectionFindNth (ini, bkSectionName (section), index) != section)
+    {
+      ++index;
+    }
+
+  return index;
+}
+
+/* Gets the index of the key at a position among the values of that key. */
+static BKSize
+bkcKeyIndex (const BKSection *section, BKSize position)
+{
+  const BKChar *key = bkKeyAt (section, position);
+  const BKChar *value = bkValueAt (section, position);
+  BKSize index = 0;
+  while (bkSectionGetNth (section, key, index) != value)
+    {
+      ++index;
+    }
+
+  return index;
+}
+
+/* Writes sections of one name, from first up to last, as INI text, by
+ * removing every other section from the document. */
+static BKCExit
+bkcSectionPrint (BKIni *ini, const BKChar *name, BKSize first, BKSize last)
+{
+  BKSize count = last - first;
+  const BKSection **keep = bkcMemAlloc (sizeof (*keep) * count);
+  if (!keep)
     {
       return bkcFailMem ();
     }
-
-  BKCExit result = BKC_EXIT_OK;
-  if (bkcSectionCopy (out, section) != BK_OK)
+  for (BKSize i = 0; i < count; ++i)
     {
-      bkcError ("bikini: %s\n", bkError (out)->message);
-      result = BKC_EXIT_ERROR;
+      keep[i] = bkSectionFindNth (ini, name, first + i);
+    }
+
+  for (BKSize position = bkSectionCount (ini); position > 0; --position)
+    {
+      const BKSection *section = bkSectionAt (ini, position - 1);
+      BKBool kept = BK_FALSE;
+      for (BKSize i = 0; i < count; ++i)
+        {
+          kept = kept || keep[i] == section;
+        }
+      if (!kept)
+        {
+          bkSectionRemoveNth (ini, bkSectionName (section),
+                              bkcSectionIndex (ini, section));
+        }
+    }
+  bkcMemFree (keep);
+
+  return bkcDocPrint (ini);
+}
+
+/* Resolves the sections a --multi query selects, from first up to last. */
+static BKBool
+bkcRange (const BKIni *ini, const BKCPath *path, BKSize *first, BKSize *last)
+{
+  const BKChar *name = path->whole ? path->whole : path->section;
+  BKSize count = bkSectionCountOf (ini, name);
+  if (path->sall)
+    {
+      *first = 0;
+      *last = count;
+    }
+  else if (path->sindex < count)
+    {
+      *first = path->sindex;
+      *last = path->sindex + 1;
     }
   else
     {
-      result = bkcDocPrint (out);
+      return BK_FALSE;
     }
 
-  bkDestroy (out);
-
-  return result;
+  return *first < *last;
 }
 
 /* Finds the section a query names as a whole. */
@@ -521,23 +833,66 @@ bkcFindWhole (const BKIni *ini, const BKCPath *path)
 }
 
 static BKCExit
-bkcQuery (BKIni *ini, const BKCPath *path, BKDword flags)
+bkcQuery (BKIni *ini, const BKCPath *path)
 {
   if (path->root)
     {
       return bkcDocPrint (ini);
     }
 
-  const BKSection *section = bkcFindWhole (ini, path);
-  if (section)
+  if (bkcFindWhole (ini, path))
     {
-      return bkcSectionPrint (section, flags);
+      return bkcSectionPrint (ini, path->whole, 0, 1);
     }
 
   const BKChar *value
       = path->key ? bkGet (ini, path->section, path->key) : NULL;
 
   return value ? bkcPrintLine (value) : BKC_EXIT_MISSING;
+}
+
+/* Prints what a --multi query selects: sections as INI text, values one
+ * per line. */
+static BKCExit
+bkcQueryIndexed (BKIni *ini, const BKCPath *path)
+{
+  if (path->root)
+    {
+      return bkcDocPrint (ini);
+    }
+
+  BKSize first = 0;
+  BKSize last = 0;
+  if (!bkcRange (ini, path, &first, &last))
+    {
+      return BKC_EXIT_MISSING;
+    }
+  if (path->whole)
+    {
+      return bkcSectionPrint (ini, path->whole, first, last);
+    }
+
+  BKBool found = BK_FALSE;
+  for (BKSize i = first; i < last; ++i)
+    {
+      const BKSection *section = bkSectionFindNth (ini, path->section, i);
+      BKSize count = bkKeyCountOf (section, path->key);
+      BKSize from = path->kall ? 0 : path->kindex;
+      BKSize to = path->kall             ? count
+                  : path->kindex < count ? path->kindex + 1
+                                         : 0;
+      for (BKSize j = from; j < to; ++j)
+        {
+          if (bkcPrintLine (bkSectionGetNth (section, path->key, j))
+              != BKC_EXIT_OK)
+            {
+              return BKC_EXIT_ERROR;
+            }
+          found = BK_TRUE;
+        }
+    }
+
+  return found ? BKC_EXIT_OK : BKC_EXIT_MISSING;
 }
 
 /* Prints the names of the sections of the document, or of the keys of a
@@ -559,10 +914,10 @@ bkcKeys (const BKIni *ini, const BKCPath *path)
   const BKSection *section = bkcFindWhole (ini, path);
   if (section)
     {
-      for (BKSize i = 0; result == BKC_EXIT_OK && i < bkSectionSize (section);
+      for (BKSize i = 0; result == BKC_EXIT_OK && i < bkKeyCount (section);
            ++i)
         {
-          result = bkcPrintLine (bkSectionKey (section, i));
+          result = bkcPrintLine (bkKeyAt (section, i));
         }
       return result;
     }
@@ -576,12 +931,54 @@ bkcKeys (const BKIni *ini, const BKCPath *path)
   return BKC_EXIT_MISSING;
 }
 
-/* Sets or deletes, then prints the document or saves it to its file. A
- * missing target of a delete leaves the file as it is. */
+/* Prints the names of a --multi query with their indexes, ready to be
+ * queried: the sections of the document, or the keys of a section. */
 static BKCExit
-bkcEdit (BKIni *ini, const BKCArgs *args, const BKCPath *path)
+bkcKeysIndexed (const BKIni *ini, const BKCPath *path)
 {
   BKCExit result = BKC_EXIT_OK;
+  if (path->root)
+    {
+      for (BKSize i = 0; result == BKC_EXIT_OK && i < bkSectionCount (ini);
+           ++i)
+        {
+          const BKSection *section = bkSectionAt (ini, i);
+          result = bkcPrintIndexed (bkSectionName (section),
+                                    bkcSectionIndex (ini, section));
+        }
+      return result;
+    }
+
+  if (path->whole)
+    {
+      const BKSection *section
+          = bkSectionFindNth (ini, path->whole, path->sindex);
+      if (!section)
+        {
+          return BKC_EXIT_MISSING;
+        }
+      for (BKSize i = 0; result == BKC_EXIT_OK && i < bkKeyCount (section);
+           ++i)
+        {
+          result = bkcPrintIndexed (bkKeyAt (section, i),
+                                    bkcKeyIndex (section, i));
+        }
+      return result;
+    }
+
+  if (bkGetNth (ini, path->section, path->sindex, path->key, path->kindex))
+    {
+      bkcError ("bikini: %s: a value has no keys\n", path->query);
+      return BKC_EXIT_ERROR;
+    }
+
+  return BKC_EXIT_MISSING;
+}
+
+/* Sets or deletes without --multi. */
+static BKCExit
+bkcChange (BKIni *ini, const BKCArgs *args, const BKCPath *path)
+{
   if (args->mode == BKC_MODE_SET)
     {
       if (bkSet (ini, path->section, path->key, args->value) != BK_OK)
@@ -589,11 +986,106 @@ bkcEdit (BKIni *ini, const BKCArgs *args, const BKCPath *path)
           bkcError ("bikini: %s\n", bkError (ini)->message);
           return BKC_EXIT_ERROR;
         }
+      return BKC_EXIT_OK;
     }
-  else if (!(path->whole && bkSectionRemove (ini, path->whole))
-           && !(path->key && bkRemove (ini, path->section, path->key)))
+
+  return (path->whole && bkSectionRemove (ini, path->whole))
+                 || (path->key && bkRemove (ini, path->section, path->key))
+             ? BKC_EXIT_OK
+             : BKC_EXIT_MISSING;
+}
+
+/* Deletes what a --multi query selects; reports whether anything went. */
+static BKBool
+bkcDeleteIndexed (BKIni *ini, const BKCPath *path)
+{
+  BKBool removed = BK_FALSE;
+  if (path->whole && !path->sall)
     {
-      result = BKC_EXIT_MISSING;
+      return bkSectionRemoveNth (ini, path->whole, path->sindex);
+    }
+  if (path->whole)
+    {
+      while (bkSectionRemove (ini, path->whole))
+        {
+          removed = BK_TRUE;
+        }
+      return removed;
+    }
+
+  // Removing keys leaves the indexes of the sections as they are.
+  BKSize first = 0;
+  BKSize last = 0;
+  if (!bkcRange (ini, path, &first, &last))
+    {
+      return BK_FALSE;
+    }
+  for (BKSize i = first; i < last; ++i)
+    {
+      if (!path->kall)
+        {
+          removed
+              = bkRemoveNth (ini, path->section, i, path->key, path->kindex)
+                || removed;
+          continue;
+        }
+      while (bkRemoveNth (ini, path->section, i, path->key, 0))
+        {
+          removed = BK_TRUE;
+        }
+    }
+
+  return removed;
+}
+
+/* Sets, adds or deletes with --multi; a missing target is not found. */
+static BKCExit
+bkcChangeIndexed (BKIni *ini, const BKCArgs *args, const BKCPath *path)
+{
+  BKStatus status = BK_OK;
+  switch (args->mode)
+    {
+    case BKC_MODE_SET:
+      if (!bkGetNth (ini, path->section, path->sindex, path->key,
+                     path->kindex))
+        {
+          return BKC_EXIT_MISSING;
+        }
+      status = bkSetNth (ini, path->section, path->sindex, path->key,
+                         path->kindex, args->value);
+      break;
+    case BKC_MODE_ADD:
+      if (path->sindex > bkSectionCountOf (ini, path->section))
+        {
+          return BKC_EXIT_MISSING;
+        }
+      status
+          = bkAdd (ini, path->section, path->sindex, path->key, args->value);
+      break;
+    default:
+      return bkcDeleteIndexed (ini, path) ? BKC_EXIT_OK : BKC_EXIT_MISSING;
+    }
+
+  if (status != BK_OK)
+    {
+      bkcError ("bikini: %s\n", bkError (ini)->message);
+      return BKC_EXIT_ERROR;
+    }
+
+  return BKC_EXIT_OK;
+}
+
+/* Edits, then prints the document or saves it to its file. A missing
+ * target leaves the file as it is. */
+static BKCExit
+bkcEdit (BKIni *ini, const BKCArgs *args, const BKCPath *path)
+{
+  BKCExit result = (args->flags & BK_FMULTI)
+                       ? bkcChangeIndexed (ini, args, path)
+                       : bkcChange (ini, args, path);
+  if (result == BKC_EXIT_ERROR)
+    {
+      return result;
     }
 
   if (!args->write)
@@ -620,8 +1112,10 @@ bkcEdit (BKIni *ini, const BKCArgs *args, const BKCPath *path)
 static BKCExit
 bkcRun (const BKCArgs *args)
 {
-  BKCPath path = { NULL, BK_FALSE, NULL, NULL, NULL, NULL };
-  BKCExit result = bkcParsePath (args->query, &path);
+  BKCPath path = { NULL, BK_FALSE, NULL,     NULL,     NULL, 0,
+                   0,    BK_FALSE, BK_FALSE, BK_FALSE, NULL };
+  BKCExit result
+      = bkcParsePath (args->query, &path, (args->flags & BK_FMULTI) != 0);
   if (result == BKC_EXIT_OK)
     {
       result = bkcCheck (args, &path);
@@ -640,18 +1134,29 @@ bkcRun (const BKCArgs *args)
       return bkcFailMem ();
     }
 
-  result = bkcLoadAll (ini, args);
+  if (args->delimiter && bkSetDelimiter (ini, args->delimiter) != BK_OK)
+    {
+      bkcError ("bikini: %s\n", bkError (ini)->message);
+      result = BKC_EXIT_ERROR;
+    }
+  if (result == BKC_EXIT_OK)
+    {
+      result = bkcLoadAll (ini, args);
+    }
   if (result == BKC_EXIT_OK)
     {
       switch (args->mode)
         {
         case BKC_MODE_QUERY:
-          result = bkcQuery (ini, &path, args->flags);
+          result = (args->flags & BK_FMULTI) ? bkcQueryIndexed (ini, &path)
+                                             : bkcQuery (ini, &path);
           break;
         case BKC_MODE_KEYS:
-          result = bkcKeys (ini, &path);
+          result = (args->flags & BK_FMULTI) ? bkcKeysIndexed (ini, &path)
+                                             : bkcKeys (ini, &path);
           break;
         case BKC_MODE_SET:
+        case BKC_MODE_ADD:
         case BKC_MODE_DELETE:
           result = bkcEdit (ini, args, &path);
           break;
@@ -673,7 +1178,8 @@ main (BKInt argc, BKChar *argv[])
 {
   bkcStreamInit ();
 
-  BKCArgs args = { BK_FNONE, BKC_MODE_QUERY, BK_FALSE, NULL, ".", NULL, 0 };
+  BKCArgs args
+      = { BK_FNONE, BKC_MODE_QUERY, BK_FALSE, NULL, NULL, ".", NULL, 0 };
   args.paths = bkcMemAlloc (sizeof (*args.paths) * ((BKSize)argc + 1));
   if (!args.paths)
     {

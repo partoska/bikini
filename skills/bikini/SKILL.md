@@ -4,7 +4,7 @@ description: Use the bikini CLI to read, list, merge, set, and delete values in 
 license: MIT
 metadata:
   author: Partoska Laboratory
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Bikini (bikini)
@@ -19,6 +19,7 @@ Bikini queries and edits INI files from the command line. It reads the common IN
 - **Input** is every `FILE` given, or standard input when there is none or the file is `-`. Several files merge in order: later values replace earlier ones, a section repeated in a later file adds its keys.
 - **Exit status** carries the answer: `0` found, `1` not found, `2` usage or input error. Errors go to standard error, never to standard output.
 - **Edits** (`-s`, `-d`) print the whole edited document, or write it back to its single file with `-w`.
+- **Repeats**: a section repeated in one file, or a key repeated in one section, is an error unless `--multi` allows it. Then every name in a query needs an index among its repeats: `SECTION[N].KEY[M]`, or `[*]` for all.
 
 ## Installation
 
@@ -135,7 +136,7 @@ bikini --version
 ## Quick reference
 
 ```
-bikini [-i] [-k | -s VALUE | -d] [-w] [QUERY] [FILE...]
+bikini [-i] [--multi] [-k | -s VALUE | --add VALUE | -d] [-w] [--delimiter TEXT] [QUERY] [FILE...]
 bikini -h                                       # full help
 bikini -V                                       # print version
 ```
@@ -148,10 +149,13 @@ bikini -V                                       # print version
 | `SECTION` | One section, as INI text (`[SECTION]` and its keys). |
 | `SECTION.KEY` | The raw value of one key. |
 | `'"a.b"."c.d"'` | Quoted names: key `c.d` of section `[a.b]`. |
+| `'s[N]'`, `'s[N].k[M]'` | With `--multi`: repeat `N` of `[s]`, value `M` of `k` (from 0, in document order). |
+| `'s[*]'`, `'s[N].k[*]'` | With `--multi`: every repeat of `[s]` as INI, every value of `k` one per line. |
 
 How a query splits into section and key:
 
 - **Unquoted**: a whole section name wins; otherwise the query splits at the **last** dot. `database.primary.max-connections` reads key `max-connections` from `[database.primary]`, and `database.primary` alone is the section `[database.primary]`.
+- **With `--multi`**: indexes are mandatory (`s.k` and `s[0].k` are usage errors). A section name ends at its first `]`, so `deep.thought[0].the.answer[0]` is key `the.answer` of `[deep.thought]` without quotes; the key's index is its last `[...]`. Quoted names take the index after the closing quote: `'"a.b"[0]."c"[1]'`.
 - **Quoted**: as soon as the query contains a `"`, only dots outside of quotes split. The last name is the key, the others, joined by dots, the section. Inside quotes, `\"` and `\\` escape. Wrap the whole query in single quotes for the shell: `bikini 'logging."handler.file"' app.ini`.
 
 ### Options
@@ -160,13 +164,16 @@ How a query splits into section and key:
 |---|---|---|
 | `-k` | `--keys` | List names, one per line: the sections of `.`, or the keys of `SECTION`. |
 | `-s VALUE` | `--set VALUE` | Set `SECTION.KEY` to `VALUE` (adding section and key when missing), print the document. |
+| | `--add VALUE` | With `--multi`: add `VALUE` to `SECTION[N].KEY` (key without index) after its last value; `N` one past the last repeat starts a new section. |
 | `-d` | `--delete` | Delete `SECTION` or `SECTION.KEY`, print the document. |
 | `-w` | `--write` | With `-s` or `-d`: write the document back to `FILE` instead of printing it. Needs exactly one `FILE`. |
 | `-i` | `--ignore-case` | Match section and key names ASCII case-insensitively. |
+| | `--multi` | Allow repeated sections and keys, address them by index, and concatenate several files instead of merging them. |
+| | `--delimiter TEXT` | Write `TEXT` between key and value: `=` or `:` with optional blanks, such as `=`, `': '`, `' = '` (default). |
 | `-h` | `--help` | Show the help. |
 | `-V` | `--version` | Show the version. |
 
-`-k`, `-s`, and `-d` exclude each other. `-s` always splits its query into section and key (never a whole section).
+`-k`, `-s`, `--add`, and `-d` exclude each other. `-s` always splits its query into section and key (never a whole section). With `--multi`, `-s` only replaces an existing value (a missing one exits `1`), `-k` prints names with their indexes (`arg[0]`, `arg[1]`), and `[*]` works in queries and `-d` only.
 
 ### Exit codes
 
@@ -220,6 +227,16 @@ bikini -d server.debug app.ini > clean.ini
 bikini -d -w client app.ini || echo "no [client] section"
 ```
 
+Lists in repeated keys and sections (`--multi`):
+
+```bash
+bikini --multi 'process[0].arg[*]' procs.ini            # every arg, one per line
+for p in $(bikini --multi -k . procs.ini); do bikini --multi "$p.name[0]" procs.ini; done
+bikini --multi -w --add -h 'process[0].arg' procs.ini   # append an arg
+bikini --multi -w --add pwd 'process[2].name' procs.ini # start [process] number 3
+bikini --multi -w -d 'process[1]' procs.ini             # drop the second [process]
+```
+
 Pipelines (output of `.` and `SECTION` is valid INI):
 
 ```bash
@@ -246,13 +263,13 @@ multi = first        Lines indented deeper than their key continue the
 
 - No interpolation: `%(name)s` and `${name}` are returned literally.
 - No `[DEFAULT]` fallback: `[DEFAULT]` is an ordinary section, so `bikini s.x` does not find a key that only `[DEFAULT]` defines. Query `DEFAULT.x` yourself when you need that fallback.
-- Repeated sections or keys within one file are errors (exit `2`); across files they merge.
+- Repeated sections or keys within one file are errors (exit `2`) unless `--multi`; across files they merge (with `--multi`, files are concatenated).
 - CRLF line endings and a UTF-8 byte order mark are accepted. Output always uses LF.
 
 ## Guidance for the agent
 
 - **Check the exit status, not the output**, to decide whether something exists: an empty value prints an empty line and exits `0`; a missing key prints nothing and exits `1`.
-- **Normalization on write**: output, and therefore `-w`, drops comments and blank lines, writes `key = value` (even for `key: value` input), and indents continuation lines with a tab. Warn the user before editing a hand-commented file in place, or suggest writing to a new file first and diffing.
+- **Normalization on write**: output, and therefore `-w`, drops comments and blank lines, writes `key = value` (even for `key: value` input), and indents continuation lines with a tab. When the file uses `key=value` and the program reading it is strict about spaces, pass `--delimiter =` to keep that form. Warn the user before editing a hand-commented file in place, or suggest writing to a new file first and diffing.
 - `-w` rewrites the file in place, keeping its permissions and links. A delete with a missing target exits `1` and leaves the file untouched.
 - Quote queries containing `"` with single quotes in POSIX shells. In Windows PowerShell 5, inner double quotes are stripped when calling native programs; there, prefer unquoted queries (a whole section name already wins over a dot split), or use PowerShell 7.3+.
 - Prefer `bikini` over `grep`/`sed`/`awk` for INI files: it handles continuation lines, both separators, comments, and trimming.

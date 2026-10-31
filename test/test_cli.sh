@@ -68,9 +68,29 @@ the.answer = 42
 thought.the.answer = still computing
 INI
 
-# edit NAME: a fresh copy of app.ini to edit in place
+cat > "$TMP/multi.ini" <<'INI'
+[process]
+name = ls
+arg = -l
+arg = -a
+dir = /opt
+
+[deep.thought]
+the.answer = 42
+
+[process]
+name = sleep
+arg = 30
+INI
+
+cat > "$TMP/multi2.ini" <<'INI'
+[process]
+name = pwd
+INI
+
+# edit NAME [SOURCE]: a fresh copy of app.ini, or SOURCE, to edit in place
 edit() {
-    cp "$TMP/app.ini" "$TMP/$1.ini"
+    cp "$TMP/${2:-app}.ini" "$TMP/$1.ini"
     echo "$TMP/$1.ini"
 }
 
@@ -215,9 +235,88 @@ expect "write stdin" 2 "" sh -c "\"$BIKINI\" -w -s 1 ship.towels < \"$TMP/app.in
 expect "write two files" 2 "" "$BIKINI" -w -s 1 ship.towels "$TMP/app.ini" "$TMP/local.ini"
 expect "write unwritable" 2 "" "$BIKINI" -w -s 1 ship.towels /
 
+# Repeated sections and keys
+expect "repeats without multi" 2 "" "$BIKINI" . "$TMP/multi.ini"
+expect "multi value" 0 "-a" "$BIKINI" --multi 'process[0].arg[1]' "$TMP/multi.ini"
+expect "multi all values" 0 "-l
+-a" "$BIKINI" --multi 'process[0].arg[*]' "$TMP/multi.ini"
+expect "multi across sections" 0 "ls
+sleep" "$BIKINI" --multi 'process[*].name[0]' "$TMP/multi.ini"
+expect "multi section" 0 "[process]
+name = sleep
+arg = 30" "$BIKINI" --multi 'process[1]' "$TMP/multi.ini"
+expect "multi all sections" 0 "[process]
+name = ls
+arg = -l
+arg = -a
+dir = /opt
+
+[process]
+name = sleep
+arg = 30" "$BIKINI" --multi 'process[*]' "$TMP/multi.ini"
+expect "multi dotted names" 0 "42" "$BIKINI" --multi 'deep.thought[0].the.answer[0]' "$TMP/multi.ini"
+expect "multi quoted names" 0 "42" "$BIKINI" --multi '"deep.thought"[0]."the.answer"[0]' "$TMP/multi.ini"
+expect "multi missing index" 1 "" "$BIKINI" --multi 'process[2]' "$TMP/multi.ini"
+expect "multi missing value" 1 "" "$BIKINI" --multi 'process[1].arg[1]' "$TMP/multi.ini"
+expect "multi needs section index" 2 "" "$BIKINI" --multi process.name "$TMP/multi.ini"
+expect "multi needs key index" 2 "" "$BIKINI" --multi 'process[0].name' "$TMP/multi.ini"
+expect "multi invalid index" 2 "" "$BIKINI" --multi 'process[-1]' "$TMP/multi.ini"
+expect "multi list sections" 0 "process[0]
+deep.thought[0]
+process[1]" "$BIKINI" --multi -k . "$TMP/multi.ini"
+expect "multi list keys" 0 "name[0]
+arg[0]
+arg[1]
+dir[0]" "$BIKINI" --multi -k 'process[0]' "$TMP/multi.ini"
+expect "multi list all" 2 "" "$BIKINI" --multi -k 'process[*]' "$TMP/multi.ini"
+expect "multi files concatenated" 0 "ls
+sleep
+pwd" "$BIKINI" --multi 'process[*].name[0]' "$TMP/multi.ini" "$TMP/multi2.ini"
+expect "multi set" 0 "-h" sh -c "\"$BIKINI\" --multi -s -h 'process[0].arg[1]' \"$TMP/multi.ini\" | \"$BIKINI\" --multi 'process[0].arg[1]'"
+expect "multi set missing" 1 "" sh -c "\"$BIKINI\" --multi -s x 'process[1].arg[1]' \"$TMP/multi.ini\" > /dev/null"
+expect "multi set all" 2 "" "$BIKINI" --multi -s x 'process[0].arg[*]' "$TMP/multi.ini"
+expect "multi add" 0 "[process]
+name = ls
+arg = -l
+arg = -a
+arg = -h
+dir = /opt" sh -c "\"$BIKINI\" --multi --add -h 'process[0].arg' \"$TMP/multi.ini\" | \"$BIKINI\" --multi 'process[0]'"
+expect "multi add section" 0 "pwd" sh -c "\"$BIKINI\" --multi --add pwd 'process[2].name' \"$TMP/multi.ini\" | \"$BIKINI\" --multi 'process[2].name[0]'"
+expect "multi add beyond" 1 "" sh -c "\"$BIKINI\" --multi --add x 'process[3].name' \"$TMP/multi.ini\" > /dev/null"
+expect "multi add with index" 2 "" "$BIKINI" --multi --add x 'process[0].arg[0]' "$TMP/multi.ini"
+expect "add needs multi" 2 "" "$BIKINI" --add x ship.crew "$TMP/app.ini"
+expect "multi delete value" 0 "-a" sh -c "\"$BIKINI\" --multi -d 'process[0].arg[0]' \"$TMP/multi.ini\" | \"$BIKINI\" --multi 'process[0].arg[*]'"
+expect "multi delete all values" 0 "name[0]
+dir[0]" sh -c "\"$BIKINI\" --multi -d 'process[*].arg[*]' \"$TMP/multi.ini\" | \"$BIKINI\" --multi -k 'process[0]'"
+expect "multi delete section" 0 "process[0]
+deep.thought[0]" sh -c "\"$BIKINI\" --multi -d 'process[1]' \"$TMP/multi.ini\" | \"$BIKINI\" --multi -k ."
+expect "multi delete all sections" 0 "deep.thought[0]" sh -c "\"$BIKINI\" --multi -d 'process[*]' \"$TMP/multi.ini\" | \"$BIKINI\" --multi -k ."
+expect "multi delete missing" 1 "" sh -c "\"$BIKINI\" --multi -d 'process[0].env[*]' \"$TMP/multi.ini\" > /dev/null"
+FILE=$(edit multi-write multi)
+expect "multi write" 0 "-l
+-a
+-h" sh -c "\"$BIKINI\" --multi -w --add -h 'process[0].arg' \"$FILE\" && \"$BIKINI\" --multi 'process[0].arg[*]' \"$FILE\""
+
+# Delimiter
+expect "delimiter" 0 "[process]
+name=sleep
+arg=30" "$BIKINI" --multi --delimiter = 'process[1]' "$TMP/multi.ini"
+expect "delimiter colon" 0 "[ship]
+name: Heart of Gold
+drive: improbability" "$BIKINI" --delimiter ': ' ship "$TMP/app.ini"
+expect "delimiter invalid" 2 "" "$BIKINI" --delimiter '->' . "$TMP/app.ini"
+expect "delimiter no value" 2 "" "$BIKINI" . "$TMP/app.ini" --delimiter
+FILE=$(edit delimiter multi)
+expect "delimiter write" 0 "[process]
+name=ls
+arg=-l
+arg=-a
+arg=-h
+dir=/opt" sh -c "\"$BIKINI\" --multi --delimiter = -w --add -h 'process[0].arg' \"$FILE\" && sed -n 1,6p \"$FILE\""
+
 expect "unknown option" 2 "" "$BIKINI" --nope
-expect "version" 0 "bikini 1.0.0" "$BIKINI" --version
-expect "help banner" 0 "Bikini v1.0.0, <https://lab.partoska.com/bikini>
+expect "version" 0 "bikini 2.0.0" "$BIKINI" --version
+expect "help banner" 0 "Bikini v2.0.0, <https://lab.partoska.com/bikini>
 Copyright (C) 2026 Fabrika Charvat s.r.o. All rights reserved.
 Licensed under the MIT License." sh -c "\"$BIKINI\" --help | sed -n '6,8p'"
 
