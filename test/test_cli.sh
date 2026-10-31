@@ -88,6 +88,16 @@ cat > "$TMP/multi2.ini" <<'INI'
 name = pwd
 INI
 
+cat > "$TMP/emoji.ini" <<'INI'
+[mood]
+smile = 😀
+family = 👨‍👩‍👧
+heart = ❤️, warm 🎉
+
+[🎉 party]
+guests = 42
+INI
+
 # edit NAME [SOURCE]: a fresh copy of app.ini, or SOURCE, to edit in place
 edit() {
     cp "$TMP/${2:-app}.ini" "$TMP/$1.ini"
@@ -314,9 +324,24 @@ arg=-a
 arg=-h
 dir=/opt" sh -c "\"$BIKINI\" --multi --delimiter = -w --add -h 'process[0].arg' \"$FILE\" && sed -n 1,6p \"$FILE\""
 
+# Emoji pass through as bytes, given in files and pipes; queries name
+# ASCII sections, as Windows hands arguments over in its ANSI code page.
+EMOJI="$TMP/emoji.ini"
+expect "emoji value" 0 "👨‍👩‍👧" "$BIKINI" mood.family "$EMOJI"
+expect "emoji value from stdin" 0 "❤️, warm 🎉" sh -c "\"$BIKINI\" mood.heart < \"$EMOJI\""
+expect "emoji section" 0 "[mood]
+smile = 😀
+family = 👨‍👩‍👧
+heart = ❤️, warm 🎉" "$BIKINI" mood "$EMOJI"
+expect "emoji list sections" 0 "mood
+🎉 party" "$BIKINI" -k . "$EMOJI"
+expect "emoji list keys" 0 "smile
+family
+heart" "$BIKINI" -k mood "$EMOJI"
+expect "emoji round trip" 0 "$(cat "$EMOJI")" "$BIKINI" . "$EMOJI"
 expect "unknown option" 2 "" "$BIKINI" --nope
-expect "version" 0 "bikini 2.0.0" "$BIKINI" --version
-expect "help banner" 0 "Bikini v2.0.0, <https://lab.partoska.com/bikini>
+expect "version" 0 "bikini 2.0.1" "$BIKINI" --version
+expect "help banner" 0 "Bikini v2.0.1, <https://lab.partoska.com/bikini>
 Copyright (C) 2026 Fabrika Charvat s.r.o. All rights reserved.
 Licensed under the MIT License." sh -c "\"$BIKINI\" --help | sed -n '6,8p'"
 

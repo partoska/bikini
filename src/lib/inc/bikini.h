@@ -39,7 +39,7 @@
  * Macros
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define BK_VERSION "2.0.0"
+#define BK_VERSION "2.0.1"
 #define BK_ERROR_MAX (256)
 #define BK_READ_ERROR (~(BKSize)0)
 

@@ -111,7 +111,8 @@ void bkcMemFree (BKVoid *ptr);
 /**
  * Prepares the standard streams; call once, before any other stream
  * function. On Windows it switches standard input and output to binary
- * mode, so they carry the same bytes as bkSave() and other platforms.
+ * mode, so they carry the same bytes as bkSave() and other platforms, and
+ * a console to the UTF-8 code page until exit, so it shows them as text.
  */
 void bkcStreamInit (void);
 

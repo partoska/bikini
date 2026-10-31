@@ -4,7 +4,7 @@
 
 # Bikini
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/partoska/bikini/releases/tag/v2.0.0)
+[![Version](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/partoska/bikini/releases/tag/v2.0.1)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE.txt)
 [![Build](https://github.com/partoska/bikini/actions/workflows/build.yml/badge.svg)](https://github.com/partoska/bikini/actions/workflows/build.yml)
 [![npm](https://img.shields.io/npm/v/@partoska/bikini.svg)](https://www.npmjs.com/package/@partoska/bikini)

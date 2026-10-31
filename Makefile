@@ -33,7 +33,7 @@
 # Project configuration.
 PROJECT = bikini
 LIBRARY = bikini
-VERSION = 2.0.0
+VERSION = 2.0.1
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 LIBDIR ?= $(PREFIX)/lib

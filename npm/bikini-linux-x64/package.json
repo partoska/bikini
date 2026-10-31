@@ -1,6 +1,6 @@
 {
   "name": "@partoska/bikini-linux-x64",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Linux x64 native binary for @partoska/bikini.",
   "os": [
     "linux"
